@@ -55,42 +55,48 @@ class ScreenshotService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "ScreenshotService starting")
+    Log.d(TAG, "ScreenshotService starting")
 
-        val resultCode = intent?.getIntExtra("resultCode", -1) ?: -1
-        val data = intent?.getParcelableExtra<Intent>("data")
+    val resultCode = intent?.getIntExtra("resultCode", -1) ?: -1
+    val data = intent?.getParcelableExtra<Intent>("data")
 
-        if (resultCode != Activity.RESULT_OK || data == null) {
-            Log.e(TAG, "Invalid result code or data")
-            stopSelf()
-            return START_NOT_STICKY
-        }
+    if (resultCode != Activity.RESULT_OK || data == null) {
+        Log.e(TAG, "Invalid result code or data")
+        stopSelf()
+        return START_NOT_STICKY
+    }
 
-        try {
-            val mediaProjectionManager =
-                getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
+    try {
+        val mediaProjectionManager =
+            getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
 
-            mediaProjection?.registerCallback(object : MediaProjection.Callback() {
-                override fun onStop() {
-                    super.onStop()
-                    Log.d(TAG, "MediaProjection stopped")
-                    stopSelf()
-                }
-            }, handler)
+        mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() {
+                super.onStop()
+                Log.d(TAG, "MediaProjection stopped")
+                stopSelf()
+            }
+        }, handler)
 
-            setupVirtualDisplay()
+        setupVirtualDisplay()
+
+        // ⭐ 15 SECOND DELAY BEFORE STARTING SCREEN CAPTURE ⭐
+        Log.d(TAG, "Waiting 15 seconds before starting capture...")
+        handler.postDelayed({
             isCapturing = true
             handler.post(screenshotRunnable)
-            Log.d(TAG, "Screenshot capture started")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error starting screenshot service: ${e.message}")
-            e.printStackTrace()
-            stopSelf()
-        }
+            Log.d(TAG, "Screenshot capture started after 15 sec delay")
+        }, 15000) // 15000 ms = 15 seconds
 
-        return START_STICKY
+    } catch (e: Exception) {
+        Log.e(TAG, "Error starting screenshot service: ${e.message}")
+        e.printStackTrace()
+        stopSelf()
     }
+
+    return START_STICKY
+}
 
     private fun setupVirtualDisplay() {
         try {
