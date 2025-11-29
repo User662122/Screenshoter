@@ -1,4 +1,4 @@
-package com.example.autoscreenshot
+package com.trojan.autoscreenshot
 
 import android.app.*
 import android.content.Context
