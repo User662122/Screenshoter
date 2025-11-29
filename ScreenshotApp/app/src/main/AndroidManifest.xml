@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.autoscreenshot">
+    package="com.trojan.autoscreenshot">
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
@@ -12,7 +12,7 @@
         android:requestLegacyExternalStorage="true"
         android:allowBackup="true"
         android:icon="@android:drawable/sym_def_app_icon"
-        android:label="Auto Screenshot"
+        android:label="Piece Taker"
         android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
         
         <activity
