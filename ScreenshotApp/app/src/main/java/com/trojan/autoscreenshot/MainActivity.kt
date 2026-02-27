@@ -6,6 +6,8 @@ import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
@@ -53,10 +55,8 @@ class MainActivity : AppCompatActivity() {
             }
         """.trimIndent()
 
-        val body = RequestBody.create(
-            MediaType.parse("application/json; charset=utf-8"),
-            json
-        )
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val body = json.toRequestBody(mediaType)
 
         val request = Request.Builder()
             .url(url)
