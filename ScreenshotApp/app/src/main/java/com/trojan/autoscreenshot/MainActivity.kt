@@ -1,116 +1,81 @@
-package com.trojan.autoscreenshot
+package com.example.networkclient
 
-import android.Manifest
-import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionManager
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
+import android.widget.Button
+import android.widget.EditText
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import com.trojan.autoscreenshot.databinding.ActivityMainBinding
+import okhttp3.*
+import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var binding: ActivityMainBinding
-    private lateinit var mediaProjectionManager: MediaProjectionManager
-    
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        if (permissions.all { it.value }) {
-            startMediaProjection()
-        } else {
-            Toast.makeText(this, "Required permissions not granted", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
-    private val mediaProjectionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val intent = Intent(this, ScreenshotService::class.java).apply {
-                putExtra("resultCode", result.resultCode)
-                putExtra("data", result.data)
-            }
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
-            
-            binding.statusText.text = "Screenshot service started"
-            binding.startButton.isEnabled = false
-            binding.stopButton.isEnabled = true
-            Toast.makeText(this, "Screenshot service started successfully", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "Media projection permission denied", Toast.LENGTH_SHORT).show()
-        }
-    }
+
+    private lateinit var urlInput: EditText
+    private lateinit var saveButton: Button
+    private lateinit var sendButton: Button
+
+    private val client = OkHttpClient()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        
-        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        
-        binding.startButton.setOnClickListener {
-            checkPermissionsAndStart()
+        setContentView(R.layout.activity_main)
+
+        urlInput = findViewById(R.id.urlInput)
+        saveButton = findViewById(R.id.saveButton)
+        sendButton = findViewById(R.id.sendButton)
+
+        val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+        urlInput.setText(prefs.getString("server_url", ""))
+
+        saveButton.setOnClickListener {
+            prefs.edit().putString("server_url", urlInput.text.toString()).apply()
+            Toast.makeText(this, "URL Saved", Toast.LENGTH_SHORT).show()
         }
-        
-        binding.stopButton.setOnClickListener {
-            stopService(Intent(this, ScreenshotService::class.java))
-            binding.statusText.text = "Screenshot service stopped"
-            binding.startButton.isEnabled = true
-            binding.stopButton.isEnabled = false
-            Toast.makeText(this, "Screenshot service stopped", Toast.LENGTH_SHORT).show()
+
+        sendButton.setOnClickListener {
+            val url = prefs.getString("server_url", null)
+
+            if (url.isNullOrEmpty()) {
+                Toast.makeText(this, "Enter URL first", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            sendPlaceholder(url)
         }
     }
-    
-    private fun checkPermissionsAndStart() {
-        val permissionsToRequest = mutableListOf<String>()
-        
-        // Check storage permissions for Android 10 and below
-        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) 
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+
+    private fun sendPlaceholder(url: String) {
+
+        val json = """
+            {
+                "message": "placeholder_data",
+                "timestamp": "${System.currentTimeMillis()}"
             }
-            
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) 
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        """.trimIndent()
+
+        val body = RequestBody.create(
+            MediaType.parse("application/json; charset=utf-8"),
+            json
+        )
+
+        val request = Request.Builder()
+            .url(url)
+            .post(body)
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
-        }
-        
-        // Check notification permission for Android 13 and above
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+
+            override fun onResponse(call: Call, response: Response) {
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Success", Toast.LENGTH_SHORT).show()
+                }
             }
-        }
-        
-        if (permissionsToRequest.isNotEmpty()) {
-            requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
-        } else {
-            startMediaProjection()
-        }
-    }
-    
-    private fun startMediaProjection() {
-        try {
-            mediaProjectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error starting media projection: ${e.message}", Toast.LENGTH_SHORT).show()
-            e.printStackTrace()
-        }
+        })
     }
 }
