@@ -1,4 +1,4 @@
-package com.example.networkclient
+package com.trojan.autoscreenshot
 
 import android.os.Bundle
 import android.widget.Button
