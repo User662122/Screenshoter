@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "UIHierarchyCapture"
-include(":ScreenshotApp")
+rootProject.name = "ScreenshotApp"
+include(":app")
