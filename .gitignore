@@ -1,0 +1,17 @@
+# Android build artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Build directories
+build/
+.gradle/
+.idea/
+*.iml
+
+# Local properties (contains SDK paths)
+local.properties
+
+# Generated files
+*/build/
