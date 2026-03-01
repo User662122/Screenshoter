@@ -4,10 +4,12 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.graphics.Rect
 import android.os.Build
-import android.util.Log
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedWriter
@@ -20,7 +22,6 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
 
     companion object {
         var instance: UIHierarchyAccessibilityService? = null
-        private const val TAG         = "UIHierarchySvc"
         private const val OUTPUT_PATH = "/storage/emulated/0/Controller"
         private const val OUTPUT_FILE = "ui_hierarchy.txt"
         private const val SEPARATOR   = "\n---SNAPSHOT_END---\n"
@@ -28,6 +29,21 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
 
     private var captureTimer: Timer? = null
     private var captureInterval: Int = 1000
+
+    // All Toasts MUST be shown on the main thread
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private fun toast(msg: String, long: Boolean = false) {
+        mainHandler.post {
+            Toast.makeText(
+                applicationContext,
+                msg,
+                if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -40,7 +56,19 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
                            AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY
             notificationTimeout = 100
         }
-        Log.i(TAG, "Accessibility service connected")
+        toast("✅ Accessibility Service connected & ready")
+    }
+
+    override fun onInterrupt() {
+        toast("⚠️ Accessibility Service interrupted!", long = true)
+        stopCapture()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopCapture()
+        instance = null
+        toast("🔴 Accessibility Service destroyed")
     }
 
     // ── Capture control ───────────────────────────────────────────────────────
@@ -48,21 +76,31 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
     fun startCapture(intervalMs: Int) {
         captureInterval = intervalMs
         stopCapture()
+
+        // Quick sanity check: can we reach the output dir?
+        val dir = File(OUTPUT_PATH)
+        if (!dir.exists() && !dir.mkdirs()) {
+            toast("❌ START FAILED: Cannot create folder:\n$OUTPUT_PATH\nGrant 'All files access' in Settings!", long = true)
+            return
+        }
+
         captureTimer = Timer("UICapture", true).also {
             it.scheduleAtFixedRate(object : TimerTask() {
                 override fun run() { captureAndSave() }
             }, 0L, captureInterval.toLong())
         }
-        Log.i(TAG, "Capture started, interval=${intervalMs}ms")
+        toast("▶ Capture started — every ${intervalMs}ms\n📁 $OUTPUT_PATH/$OUTPUT_FILE")
     }
 
     fun stopCapture() {
         captureTimer?.cancel()
         captureTimer = null
-        Log.i(TAG, "Capture stopped")
     }
 
     // ── Snapshot ──────────────────────────────────────────────────────────────
+
+    // Counts how many snapshots have been written (reset each start)
+    private var snapshotCount = 0
 
     private fun captureAndSave() {
         try {
@@ -71,9 +109,7 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
                 put("captureInterval_ms", captureInterval)
 
                 val windowsArray = JSONArray()
-                getWindows()?.forEach { window ->
-                    windowsArray.put(serializeWindow(window))
-                }
+                getWindows()?.forEach { window -> windowsArray.put(serializeWindow(window)) }
                 put("windows", windowsArray)
 
                 getRootInActiveWindow()?.let { root ->
@@ -81,13 +117,61 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
                     root.recycle()
                 }
             }
-            // FIX #1 — appendToFile now logs errors instead of silently swallowing them
+
             appendToFile(snapshot.toString(2))
 
         } catch (e: Exception) {
-            Log.e(TAG, "captureAndSave failed: ${e.message}", e)
             val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
+            toast("❌ Snapshot error:\n${e.javaClass.simpleName}: ${e.message}", long = true)
             appendToFile("""{"error":"${e.message}","timestamp":"$ts"}""")
+        }
+    }
+
+    // ── File I/O ──────────────────────────────────────────────────────────────
+
+    private fun appendToFile(content: String) {
+        try {
+            val dir = File(OUTPUT_PATH)
+            if (!dir.exists()) {
+                val created = dir.mkdirs()
+                if (!created) {
+                    toast(
+                        "❌ WRITE FAILED: Could not create directory\n$OUTPUT_PATH\n" +
+                        "→ Grant 'All files access' permission!",
+                        long = true
+                    )
+                    return
+                }
+            }
+
+            val file = File(dir, OUTPUT_FILE)
+            BufferedWriter(FileWriter(file, true)).use { writer ->
+                writer.write(content)
+                writer.write(SEPARATOR)
+                writer.flush()
+            }
+
+            snapshotCount++
+            // Show a confirmation toast every 5 snapshots to avoid flooding the screen
+            if (snapshotCount % 5 == 0) {
+                val sizeKb = file.length() / 1024
+                toast("✅ $snapshotCount snapshots saved (${sizeKb}KB)\n📁 $OUTPUT_FILE")
+            }
+
+        } catch (e: SecurityException) {
+            toast(
+                "🔒 PERMISSION DENIED writing file!\n" +
+                "Go to Settings → Apps → UIHierarchyCapture\n" +
+                "→ Grant 'All files access'",
+                long = true
+            )
+        } catch (e: Exception) {
+            toast(
+                "❌ FILE WRITE ERROR\n" +
+                "${e.javaClass.simpleName}: ${e.message}\n" +
+                "Path: $OUTPUT_PATH/$OUTPUT_FILE",
+                long = true
+            )
         }
     }
 
@@ -95,11 +179,11 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
 
     private fun serializeWindow(window: AccessibilityWindowInfo): JSONObject {
         val obj = JSONObject()
-        obj.put("id",   window.id)
-        obj.put("type", windowTypeToString(window.type))
+        obj.put("id",    window.id)
+        obj.put("type",  windowTypeToString(window.type))
         obj.put("layer", window.layer)
-        obj.put("isActive",              window.isActive)
-        obj.put("isFocused",             window.isFocused)
+        obj.put("isActive",               window.isActive)
+        obj.put("isFocused",              window.isFocused)
         obj.put("isAccessibilityFocused", window.isAccessibilityFocused)
 
         val bounds = Rect()
@@ -125,22 +209,22 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
         node.viewIdResourceName?.let { obj.put("resourceId",         it) }
         node.packageName?.let        { obj.put("packageName",        it.toString()) }
 
-        Rect().also { r -> node.getBoundsInScreen(r);  obj.put("boundsInScreen",  rectToJson(r)) }
-        Rect().also { r -> node.getBoundsInParent(r);  obj.put("boundsInParent",  rectToJson(r)) }
+        Rect().also { r -> node.getBoundsInScreen(r); obj.put("boundsInScreen", rectToJson(r)) }
+        Rect().also { r -> node.getBoundsInParent(r); obj.put("boundsInParent", rectToJson(r)) }
 
-        obj.put("isCheckable",    node.isCheckable)
-        obj.put("isChecked",      node.isChecked)
-        obj.put("isClickable",    node.isClickable)
-        obj.put("isEnabled",      node.isEnabled)
-        obj.put("isFocusable",    node.isFocusable)
-        obj.put("isFocused",      node.isFocused)
-        obj.put("isLongClickable",node.isLongClickable)
-        obj.put("isPassword",     node.isPassword)
-        obj.put("isScrollable",   node.isScrollable)
-        obj.put("isSelected",     node.isSelected)
-        obj.put("isVisibleToUser",node.isVisibleToUser)
-        obj.put("inputType",      node.inputType)
-        obj.put("childCount",     node.childCount)
+        obj.put("isCheckable",     node.isCheckable)
+        obj.put("isChecked",       node.isChecked)
+        obj.put("isClickable",     node.isClickable)
+        obj.put("isEnabled",       node.isEnabled)
+        obj.put("isFocusable",     node.isFocusable)
+        obj.put("isFocused",       node.isFocused)
+        obj.put("isLongClickable", node.isLongClickable)
+        obj.put("isPassword",      node.isPassword)
+        obj.put("isScrollable",    node.isScrollable)
+        obj.put("isSelected",      node.isSelected)
+        obj.put("isVisibleToUser", node.isVisibleToUser)
+        obj.put("inputType",       node.inputType)
+        obj.put("childCount",      node.childCount)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             node.hintText?.let { obj.put("hintText", it.toString()) }
@@ -177,52 +261,14 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
     }
 
     private fun windowTypeToString(type: Int) = when (type) {
-        AccessibilityWindowInfo.TYPE_APPLICATION          -> "APPLICATION"
-        AccessibilityWindowInfo.TYPE_INPUT_METHOD         -> "INPUT_METHOD"
-        AccessibilityWindowInfo.TYPE_SYSTEM               -> "SYSTEM"
+        AccessibilityWindowInfo.TYPE_APPLICATION           -> "APPLICATION"
+        AccessibilityWindowInfo.TYPE_INPUT_METHOD          -> "INPUT_METHOD"
+        AccessibilityWindowInfo.TYPE_SYSTEM                -> "SYSTEM"
         AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> "ACCESSIBILITY_OVERLAY"
-        else -> "UNKNOWN($type)"
+        else                                               -> "UNKNOWN($type)"
     }
-
-    // ── File I/O (FIX #1) ────────────────────────────────────────────────────
-
-    private fun appendToFile(content: String) {
-        try {
-            // FIX #1 — create dir fresh every write attempt in case it was deleted
-            val dir = File(OUTPUT_PATH)
-            if (!dir.exists()) {
-                val created = dir.mkdirs()
-                if (!created) {
-                    Log.e(TAG, "Could not create directory: $OUTPUT_PATH")
-                    return
-                }
-            }
-            val file = File(dir, OUTPUT_FILE)
-            BufferedWriter(FileWriter(file, true)).use { writer ->
-                writer.write(content)
-                writer.write(SEPARATOR)
-                writer.flush()
-            }
-            Log.v(TAG, "Snapshot written to ${file.absolutePath} (${file.length()} bytes)")
-        } catch (e: Exception) {
-            // FIX #1 — log the real error instead of swallowing it silently
-            Log.e(TAG, "appendToFile FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
-        }
-    }
-
-    // ── AccessibilityService callbacks ────────────────────────────────────────
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Periodic capture is handled by the Timer; no event-driven logic needed
-    }
-
-    override fun onInterrupt() {
-        stopCapture()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        stopCapture()
-        instance = null
+        // Periodic capture handled by Timer; no event-driven logic needed
     }
 }
