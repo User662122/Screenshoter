@@ -1,0 +1,14 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build APK",
+			"type": "shell",
+			"command": "cd '${workspaceFolder}' && gradlew.bat assembleDebug",
+			"problemMatcher": [
+				"$gradle"
+			],
+			"group": "build"
+		}
+	]
+}

@@ -1,0 +1,4 @@
+C:\Users\ROHIT DAS\.gemini\antigravity\scratch\Screenshoter\ScreenshotApp\app\src\main\java\com\trojan\autoscreenshot\MainActivity.kt
+C:\Users\ROHIT DAS\.gemini\antigravity\scratch\Screenshoter\ScreenshotApp\app\src\main\java\com\trojan\autoscreenshot\ScreenshotService.kt
+C:\Users\ROHIT DAS\.gemini\antigravity\scratch\Screenshoter\ScreenshotApp\app\src\main\java\com\trojan\autoscreenshot\UITreeAccessibilityService.kt
+C:\Users\ROHIT DAS\.gemini\antigravity\scratch\Screenshoter\ScreenshotApp\app\src\main\java\com\trojan\autoscreenshot\UITreeExtractor.kt
