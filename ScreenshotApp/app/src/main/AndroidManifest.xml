@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.trojan.autoscreenshot">
+    package="com.uitreecapture">
 
-    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage"
+        xmlns:tools="http://schemas.android.com/tools"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
 
     <application
         android:allowBackup="true"
-        android:label="Network Client"
-        android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+        android:label="UIHierarchyCapture"
+        android:theme="@style/Theme.AppCompat.DayNight">
 
         <activity
             android:name=".MainActivity"
@@ -18,5 +25,24 @@
             </intent-filter>
         </activity>
 
+        <service
+            android:name=".UIHierarchyService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false"/>
+
+        <service
+            android:name=".UIHierarchyAccessibilityService"
+            android:exported="true"
+            android:label="UIHierarchyCapture"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config"/>
+        </service>
+
     </application>
+
 </manifest>
