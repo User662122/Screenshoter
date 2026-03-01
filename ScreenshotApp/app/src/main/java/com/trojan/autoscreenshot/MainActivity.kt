@@ -41,12 +41,14 @@ class MainActivity : AppCompatActivity() {
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) {
-                // Permission just granted — NOW create the folder
-                tryCreateOutputDir()
+                Toast.makeText(this, "✅ 'All files access' granted", Toast.LENGTH_SHORT).show()
+                // Do NOT create folder here — wait until user presses Start
             } else {
-                Toast.makeText(this,
-                    "❌ 'All files access' denied — file cannot be saved!\nGrant it before starting capture.",
-                    Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    this,
+                    "❌ 'All files access' denied — files cannot be saved!\nGrant it before starting capture.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
@@ -65,15 +67,15 @@ class MainActivity : AppCompatActivity() {
             if (UIHierarchyService.isRunning) stopCapture() else startCapture()
         }
 
-        // Only request permission here — do NOT touch the folder yet
-        requestStoragePermissions()
-
+        // Show permission status but do NOT create any folder here
+        updatePermissionHint()
         updateUI()
     }
 
     override fun onResume() {
         super.onResume()
         uiHandler.post(uiRefreshRunnable)
+        updatePermissionHint()
     }
 
     override fun onPause() {
@@ -81,31 +83,59 @@ class MainActivity : AppCompatActivity() {
         uiHandler.removeCallbacks(uiRefreshRunnable)
     }
 
+    // ── Show permission hint without triggering folder creation ───────────────
+
+    private fun updatePermissionHint() {
+        if (!hasStoragePermission()) {
+            // Just update the status text to indicate permission is needed
+            tvStatus.text = "Status: ⚠️ Storage permission required\nTap 'Grant Storage Permission' below"
+        }
+    }
+
     // ── Storage permissions ───────────────────────────────────────────────────
 
+    /**
+     * Called only when user taps Start or explicitly requests permission.
+     * NEVER called from onCreate.
+     */
     private fun requestStoragePermissions() {
         when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
                 if (!Environment.isExternalStorageManager()) {
-                    Toast.makeText(this,
+                    Toast.makeText(
+                        this,
                         "Please grant 'All files access' to save the hierarchy file",
-                        Toast.LENGTH_LONG).show()
-                    manageStorageLauncher.launch(
-                        Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                            Uri.parse("package:$packageName"))
-                    )
+                        Toast.LENGTH_LONG
+                    ).show()
+                    try {
+                        manageStorageLauncher.launch(
+                            Intent(
+                                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
+                    } catch (e: Exception) {
+                        // Fallback if the specific app intent isn't supported
+                        manageStorageLauncher.launch(
+                            Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        )
+                    }
                 }
-                // If already granted, folder will be created lazily on first Start press
             }
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
-                if (ContextCompat.checkSelfPermission(this,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                    ActivityCompat.requestPermissions(this,
-                        arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                                Manifest.permission.READ_EXTERNAL_STORAGE),
-                        REQ_STORAGE)
+                if (ContextCompat.checkSelfPermission(
+                        this, Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    ActivityCompat.requestPermissions(
+                        this,
+                        arrayOf(
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                            Manifest.permission.READ_EXTERNAL_STORAGE
+                        ),
+                        REQ_STORAGE
+                    )
                 }
-                // If already granted, folder will be created lazily on first Start press
             }
             // else: < Android 6, no runtime permission needed
         }
@@ -117,13 +147,15 @@ class MainActivity : AppCompatActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_STORAGE) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // Permission just granted — NOW create the folder
-                tryCreateOutputDir()
                 Toast.makeText(this, "✅ Storage permission granted", Toast.LENGTH_SHORT).show()
+                // Permission was just granted — now attempt to start if user was trying to start
+                // Do NOT create folder yet; startCapture() will handle it
             } else {
-                Toast.makeText(this,
-                    "❌ Storage permission denied — file cannot be saved!\nGrant it before starting capture.",
-                    Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    this,
+                    "❌ Storage permission denied — files cannot be saved!\nGrant it before starting capture.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
@@ -138,16 +170,18 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Step 2: check storage permission
+        // Step 2: check storage permission — if not granted, request it and bail
         if (!hasStoragePermission()) {
-            Toast.makeText(this,
-                "⚠️ Storage permission not granted yet!\nTap OK on the permission dialog.",
-                Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                this,
+                "⚠️ Storage permission not granted yet!\nGranting permission now...",
+                Toast.LENGTH_LONG
+            ).show()
             requestStoragePermissions()
             return
         }
 
-        // Step 3: create folder RIGHT NOW (every time, handles folder-was-deleted case too)
+        // Step 3: create folder NOW (only reaches here if permission is confirmed)
         if (!tryCreateOutputDir()) {
             // tryCreateOutputDir already shows the relevant Toast — just abort
             return
@@ -169,42 +203,41 @@ class MainActivity : AppCompatActivity() {
         uiHandler.postDelayed({ updateUI() }, 400)
     }
 
-    // ── Folder creation — called lazily, NEVER in onCreate ───────────────────
+    // ── Folder creation — ONLY called from startCapture(), NEVER from onCreate ─
 
     /**
-     * Tries to create /storage/emulated/0/Controller.
-     * - If it already exists → treats it as success, shows nothing.
-     * - If it doesn't exist → tries mkdirs(), shows result Toast.
-     * Returns true if the folder is ready to use, false otherwise.
+     * Uses Environment.getExternalStorageDirectory() (not a hardcoded path)
+     * so it works on all devices regardless of actual mount point.
      */
     private fun tryCreateOutputDir(): Boolean {
         val dir = File(Environment.getExternalStorageDirectory(), "Controller")
 
         return when {
             dir.exists() && dir.isDirectory -> {
-                // Folder already there — nothing to do, just proceed silently
+                // Folder already there — silently proceed
                 true
             }
             dir.exists() && !dir.isDirectory -> {
-                // A FILE called "Controller" exists at that path — very unlikely but handle it
-                Toast.makeText(this,
-                    "❌ Cannot create folder: a file named 'Controller' already exists at that path!",
-                    Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    this,
+                    "❌ Cannot create folder: a file named 'Controller' already exists at ${dir.absolutePath}!",
+                    Toast.LENGTH_LONG
+                ).show()
                 false
             }
             else -> {
-                // Folder doesn't exist — try to create it now
                 val created = dir.mkdirs()
                 if (created) {
-                    Toast.makeText(this,
-                        "✅ Created folder: ${dir.absolutePath}",
-                        Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "✅ Created folder: ${dir.absolutePath}", Toast.LENGTH_SHORT).show()
                     true
                 } else {
-                    Toast.makeText(this,
+                    Toast.makeText(
+                        this,
                         "❌ Failed to create folder: ${dir.absolutePath}\n" +
-                        "Check that 'All files access' is granted in Settings → Apps → UIHierarchyCapture",
-                        Toast.LENGTH_LONG).show()
+                        "Go to Settings → Apps → UIHierarchyCapture → Permissions\n" +
+                        "and grant 'All files access'.",
+                        Toast.LENGTH_LONG
+                    ).show()
                     false
                 }
             }
@@ -216,17 +249,21 @@ class MainActivity : AppCompatActivity() {
     private fun updateUI() {
         val running = UIHierarchyService.isRunning
         btnStartStop.text = if (running) "⏹  Stop Capture" else "▶  Start Capture"
+
+        val outputPath = File(Environment.getExternalStorageDirectory(), "Controller/ui_hierarchy.txt").absolutePath
+
         tvStatus.text = if (running)
-            "Status: 🟢 CAPTURING\nOutput: /storage/emulated/0/Controller/ui_hierarchy.txt"
+            "Status: 🟢 CAPTURING\nOutput: $outputPath"
         else
-            "Status: ⚪ IDLE\nOutput: /storage/emulated/0/Controller/ui_hierarchy.txt"
+            "Status: ⚪ IDLE\nOutput: $outputPath"
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun isAccessibilityServiceEnabled(): Boolean {
         val prefString = Settings.Secure.getString(
-            contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+            contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
         val target = "$packageName/${UIHierarchyAccessibilityService::class.java.name}"
         return prefString.split(":").any { it.trim().equals(target, ignoreCase = true) }
     }
@@ -235,8 +272,9 @@ class MainActivity : AppCompatActivity() {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
             Environment.isExternalStorageManager()
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ->
-            ContextCompat.checkSelfPermission(this,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(
+                this, Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
         else -> true
     }
 
