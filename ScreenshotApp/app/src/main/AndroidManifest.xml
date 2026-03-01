@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.uitreecapture">
 
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- Storage permissions for all API levels -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29"/>
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <!-- Android 11+ all-files access -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
-        tools:ignore="ScopedStorage"
-        xmlns:tools="http://schemas.android.com/tools"/>
+        tools:ignore="ScopedStorage"/>
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- Required on API 34+ when foregroundServiceType="specialUse" -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
 
     <application
@@ -28,7 +33,12 @@
         <service
             android:name=".UIHierarchyService"
             android:foregroundServiceType="specialUse"
-            android:exported="false"/>
+            android:exported="false">
+            <!-- Required for foregroundServiceType="specialUse" on API 34+ -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="monitorDeviceState"/>
+        </service>
 
         <service
             android:name=".UIHierarchyAccessibilityService"
