@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.graphics.Rect
 import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
@@ -22,9 +23,9 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
 
     companion object {
         var instance: UIHierarchyAccessibilityService? = null
-        private const val OUTPUT_PATH = "/storage/emulated/0/Controller"
-        private const val OUTPUT_FILE = "ui_hierarchy.txt"
-        private const val SEPARATOR   = "\n---SNAPSHOT_END---\n"
+        private const val OUTPUT_DIR_NAME = "Controller"
+        private const val OUTPUT_FILE     = "ui_hierarchy.txt"
+        private const val SEPARATOR       = "\n---SNAPSHOT_END---\n"
     }
 
     private var captureTimer: Timer? = null
@@ -32,6 +33,18 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
     private var snapshotCount: Int   = 0
 
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // ── Resolve output paths dynamically (never hardcoded) ───────────────────
+
+    /** /storage/emulated/0/Controller  (or actual mount point on this device) */
+    private val outputDir: File
+        get() = File(Environment.getExternalStorageDirectory(), OUTPUT_DIR_NAME)
+
+    /** /storage/emulated/0/Controller/ui_hierarchy.txt */
+    private val outputFile: File
+        get() = File(outputDir, OUTPUT_FILE)
+
+    // ─────────────────────────────────────────────────────────────────────────
 
     private fun toast(msg: String, long: Boolean = false) {
         mainHandler.post {
@@ -75,20 +88,16 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
         snapshotCount   = 0
         stopCapture()
 
-        // Verify the output dir is available before starting the timer
-        // (MainActivity already created it, but check again as a safety net)
-        val dirCheck = ensureDir()
-        if (!dirCheck) {
-            // ensureDir already showed the Toast with the exact reason
-            return
-        }
+        // Verify the output dir is available (MainActivity already created it,
+        // but double-check as a safety net)
+        if (!ensureDir()) return   // ensureDir already toasted the reason
 
         captureTimer = Timer("UICapture", true).also {
             it.scheduleAtFixedRate(object : TimerTask() {
                 override fun run() { captureAndSave() }
             }, 0L, captureInterval.toLong())
         }
-        toast("▶ Capture started — every ${intervalMs}ms\n📁 $OUTPUT_PATH/$OUTPUT_FILE")
+        toast("▶ Capture started — every ${intervalMs}ms\n📁 ${outputFile.absolutePath}")
     }
 
     fun stopCapture() {
@@ -125,25 +134,22 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
     // ── File I/O ──────────────────────────────────────────────────────────────
 
     /**
-     * Ensures the output directory exists.
-     * - Already exists as a directory → silent success, returns true.
-     * - Doesn't exist → tries mkdirs(), toasts result, returns true/false.
-     * - Exists as a file (edge case) → toasts error, returns false.
-     * Never calls mkdirs() if the folder is already there.
+     * Ensures the output directory exists using the dynamic outputDir path.
+     * Returns true if the folder is ready to use.
      */
     private fun ensureDir(): Boolean {
-        val dir = File(OUTPUT_PATH)
+        val dir = outputDir
         return when {
-            dir.exists() && dir.isDirectory -> true   // already fine, do nothing
+            dir.exists() && dir.isDirectory -> true
             dir.exists() && !dir.isDirectory -> {
-                toast("❌ '$OUTPUT_PATH' exists but is a file, not a folder!", long = true)
+                toast("❌ '${dir.absolutePath}' exists but is a file, not a folder!", long = true)
                 false
             }
             else -> {
                 val created = dir.mkdirs()
                 if (!created) {
                     toast(
-                        "❌ Could not create folder: $OUTPUT_PATH\n" +
+                        "❌ Could not create folder: ${dir.absolutePath}\n" +
                         "→ Go to Settings → Apps → UIHierarchyCapture\n" +
                         "→ Grant 'All files access'",
                         long = true
@@ -156,10 +162,9 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
 
     private fun appendToFile(content: String) {
         try {
-            // Re-check dir on every write — handles the folder-deleted-mid-session case
             if (!ensureDir()) return
 
-            val file = File(OUTPUT_PATH, OUTPUT_FILE)
+            val file = outputFile
             BufferedWriter(FileWriter(file, true)).use { writer ->
                 writer.write(content)
                 writer.write(SEPARATOR)
@@ -167,10 +172,10 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
             }
 
             snapshotCount++
-            // Toast every 5 snapshots to confirm writes without flooding the screen
+            // Toast every 5 snapshots to confirm writes without flooding
             if (snapshotCount % 5 == 0) {
                 val sizeKb = file.length() / 1024
-                toast("✅ $snapshotCount snapshots saved (${sizeKb}KB)\n📁 $OUTPUT_FILE")
+                toast("✅ $snapshotCount snapshots saved (${sizeKb}KB)\n📁 ${file.name}")
             }
 
         } catch (e: SecurityException) {
@@ -184,7 +189,7 @@ class UIHierarchyAccessibilityService : AccessibilityService() {
             toast(
                 "❌ FILE WRITE ERROR\n" +
                 "${e.javaClass.simpleName}: ${e.message}\n" +
-                "Path: $OUTPUT_PATH/$OUTPUT_FILE",
+                "Path: ${outputFile.absolutePath}",
                 long = true
             )
         }
