@@ -480,4 +480,85 @@ class ScriptExecutorService : AccessibilityService() {
         var result = false
         val latch = java.util.concurrent.CountDownLatch(1)
         dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(g: GestureDescription) { res
+            override fun onCompleted(g: GestureDescription) { result = true; latch.countDown() }
+            override fun onCancelled(g: GestureDescription) { latch.countDown() }
+        }, null)
+        latch.await(durationMs + 1000, java.util.concurrent.TimeUnit.MILLISECONDS)
+        return result
+    }
+
+    // ── Node search helpers ───────────────────────────────────────────────────
+
+    private fun findNodeByText(root: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
+        val nodes = root.findAccessibilityNodeInfosByText(text)
+        return nodes?.firstOrNull()
+    }
+
+    private fun findNodeByResourceId(root: AccessibilityNodeInfo, id: String): AccessibilityNodeInfo? {
+        val nodes = root.findAccessibilityNodeInfosByViewId(id)
+        return nodes?.firstOrNull()
+    }
+
+    private fun findNodeByDesc(root: AccessibilityNodeInfo, desc: String): AccessibilityNodeInfo? =
+        searchNode(root) { it.contentDescription?.toString()?.contains(desc, ignoreCase = true) == true }
+
+    private fun findFocusedInput(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+        searchNode(root) {
+            it.isFocused && (it.className?.contains("EditText") == true ||
+                             it.className?.contains("Input") == true)
+        }
+
+    private fun findFirstInput(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+        searchNode(root) {
+            it.isEnabled && it.isVisibleToUser &&
+            (it.className?.contains("EditText") == true ||
+             it.inputType != 0)
+        }
+
+    private fun findScrollableNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+        searchNode(root) { it.isScrollable }
+
+    private fun searchNode(
+        node: AccessibilityNodeInfo,
+        predicate: (AccessibilityNodeInfo) -> Boolean
+    ): AccessibilityNodeInfo? {
+        if (predicate(node)) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = searchNode(child, predicate)
+            if (found != null) { child.recycle(); return found }
+            child.recycle()
+        }
+        return null
+    }
+
+    // ── Result helpers ────────────────────────────────────────────────────────
+
+    private fun makeResult(action: String, success: Boolean, message: String) =
+        JSONObject().apply {
+            put("action", action)
+            put("success", success)
+            put("message", message)
+            put("timestamp", System.currentTimeMillis())
+        }
+
+    private fun writeResults() {
+        try {
+            controlDir.mkdirs()
+            val out = JSONObject().apply {
+                put("executed_at", System.currentTimeMillis())
+                put("results", JSONArray().also { arr -> results.forEach { arr.put(it) } })
+            }
+            FileWriter(resultFile).use { it.write(out.toString(2)) }
+        } catch (e: Exception) {
+            toast("⚠️ Could not write results: ${e.message}")
+        }
+    }
+
+    private fun toast(msg: String, long: Boolean = false) {
+        mainHandler.post {
+            Toast.makeText(applicationContext, msg,
+                if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+        }
+    }
+}
