@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">UIHierarchyCapture</string>
     <string name="accessibility_service_description">Captures the full UI hierarchy of all windows and saves it to /storage/emulated/0/Controller/ui_hierarchy.txt</string>
+    <string name="script_executor_description">Executes automation scripts from /storage/emulated/0/Controller/commands.json — allows tapping, swiping, typing, opening apps, and browser control.</string>
 </resources>
