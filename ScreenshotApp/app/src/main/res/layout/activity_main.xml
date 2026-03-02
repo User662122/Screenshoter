@@ -53,6 +53,16 @@
         android:text="2. Start Capture"
         android:backgroundTint="#03DAC5"
         android:textColor="#000000"
+        android:layout_marginBottom="12dp"/>
+
+    <!-- NEW: Run Script button -->
+    <Button
+        android:id="@+id/btnRunScript"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="▶  Run Script"
+        android:backgroundTint="#FF6D00"
+        android:textColor="#FFFFFF"
         android:layout_marginBottom="24dp"/>
 
     <TextView
@@ -68,7 +78,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="\n📁 Output file:\n/storage/emulated/0/Controller/ui_hierarchy.txt\n\nSteps:\n1. Tap 'Enable Accessibility Service'\n2. Find and enable 'UIHierarchyCapture' in the list\n3. Come back and tap 'Start Capture'"
+        android:text="\n📁 Output file:\n/storage/emulated/0/Controller/ui_hierarchy.txt\n\nSteps:\n1. Tap 'Enable Accessibility Service'\n2. Find and enable 'UIHierarchyCapture' in the list\n3. Come back and tap 'Start Capture'\n4. Tap 'Run Script' to execute automation"
         android:textColor="#AAAAAA"
         android:textSize="13sp"
         android:padding="12dp"
