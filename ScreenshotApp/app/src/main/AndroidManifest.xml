@@ -1,26 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    STORAGE PERMISSION STRATEGY BY API LEVEL
-    API 23-28  WRITE_EXTERNAL_STORAGE runtime permission
-    API 29     WRITE_EXTERNAL_STORAGE + requestLegacyExternalStorage="true"
-               Without the flag, scoped storage is enforced even when the
-               permission is granted, causing File.mkdirs()/FileWriter to fail silently.
-    API 30+    MANAGE_EXTERNAL_STORAGE ("All files access") via Settings screen
--->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     package="com.uitreecapture">
 
-    <!-- Android 6-9 (API 23-28) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
-    <!-- Android 6-10 (API 23-29) -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29"/>
-    <!-- Android 11+ (API 30+): granted via special Settings screen, not a runtime dialog -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage"/>
-
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
 
@@ -29,14 +17,6 @@
         android:label="UIHierarchyCapture"
         android:theme="@style/Theme.AppCompat.DayNight"
         android:requestLegacyExternalStorage="true">
-        <!--
-            requestLegacyExternalStorage="true" is the KEY FIX for Android 10 (API 29).
-            Without it, File-based writes to /storage/emulated/0/ fail silently even
-            after WRITE_EXTERNAL_STORAGE is granted (scoped storage is enforced).
-            This attribute is a no-op on API 28 and below.
-            It is IGNORED on API 30+ — Android 11 enforces scoped storage regardless,
-            which is why MANAGE_EXTERNAL_STORAGE is used on API 30+.
-        -->
 
         <activity
             android:name=".MainActivity"
@@ -56,6 +36,7 @@
                 android:value="monitorDeviceState"/>
         </service>
 
+        <!-- Original capture service -->
         <service
             android:name=".UIHierarchyAccessibilityService"
             android:exported="true"
@@ -67,6 +48,20 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config"/>
+        </service>
+
+        <!-- NEW: Script Executor — enable in Settings > Accessibility > Script Executor -->
+        <service
+            android:name=".ScriptExecutorService"
+            android:exported="true"
+            android:label="Script Executor"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/script_executor_config"/>
         </service>
 
     </application>
