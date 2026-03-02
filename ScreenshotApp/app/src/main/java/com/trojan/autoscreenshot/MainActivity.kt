@@ -18,6 +18,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -26,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var btnStartStop: Button
     private lateinit var btnOpenSettings: Button
+    private lateinit var btnRunScript: Button  // NEW
 
     private val uiHandler = Handler(Looper.getMainLooper())
     private val uiRefreshRunnable = object : Runnable {
@@ -42,7 +45,6 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) {
                 Toast.makeText(this, "✅ 'All files access' granted", Toast.LENGTH_SHORT).show()
-                // Do NOT create folder here — wait until user presses Start
             } else {
                 Toast.makeText(
                     this,
@@ -61,13 +63,14 @@ class MainActivity : AppCompatActivity() {
         tvStatus        = findViewById(R.id.tvStatus)
         btnStartStop    = findViewById(R.id.btnStartStop)
         btnOpenSettings = findViewById(R.id.btnOpenSettings)
+        btnRunScript    = findViewById(R.id.btnRunScript)  // NEW
 
         btnOpenSettings.setOnClickListener { openAccessibilitySettings() }
         btnStartStop.setOnClickListener {
             if (UIHierarchyService.isRunning) stopCapture() else startCapture()
         }
+        btnRunScript.setOnClickListener { runScript() }  // NEW
 
-        // Show permission status but do NOT create any folder here
         updatePermissionHint()
         updateUI()
     }
@@ -83,21 +86,89 @@ class MainActivity : AppCompatActivity() {
         uiHandler.removeCallbacks(uiRefreshRunnable)
     }
 
-    // ── Show permission hint without triggering folder creation ───────────────
+    // ── NEW: Run Script ───────────────────────────────────────────────────────
+
+    private fun runScript() {
+        // 1. Check Script Executor accessibility service is connected
+        val service = ScriptExecutorService.instance
+        if (service == null) {
+            Toast.makeText(
+                this,
+                "❌ Script Executor not active!\nGo to Settings → Accessibility → Script Executor and enable it.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        // 2. Check storage permission
+        if (!hasStoragePermission()) {
+            Toast.makeText(
+                this,
+                "⚠️ Storage permission needed! Grant 'All files access' first.",
+                Toast.LENGTH_LONG
+            ).show()
+            requestStoragePermissions()
+            return
+        }
+
+        // 3. Build commands.json and write it to /storage/emulated/0/Controller/
+        try {
+            val controlDir = File(Environment.getExternalStorageDirectory(), "Controller")
+            controlDir.mkdirs()
+            val cmdFile = File(controlDir, "commands.json")
+
+            // ── Define your script actions here ──────────────────────────────
+            val actions = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("action", "open_app")
+                    put("package", "com.android.chrome")
+                })
+                put(JSONObject().apply {
+                    put("action", "wait")
+                    put("ms", 2000)
+                })
+                put(JSONObject().apply {
+                    put("action", "new_tab")
+                    put("url", "https://airdrop.io")
+                })
+                put(JSONObject().apply {
+                    put("action", "wait")
+                    put("ms", 3000)
+                })
+            }
+            // ─────────────────────────────────────────────────────────────────
+
+            val json = JSONObject().apply {
+                put("actions", actions)
+            }
+
+            cmdFile.writeText(json.toString(2))
+
+            Toast.makeText(
+                this,
+                "✅ Script sent! Running ${actions.length()} action(s)…",
+                Toast.LENGTH_SHORT
+            ).show()
+
+        } catch (e: Exception) {
+            Toast.makeText(
+                this,
+                "❌ Failed to write script: ${e.message}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    // ── Permission hint ───────────────────────────────────────────────────────
 
     private fun updatePermissionHint() {
         if (!hasStoragePermission()) {
-            // Just update the status text to indicate permission is needed
             tvStatus.text = "Status: ⚠️ Storage permission required\nTap 'Grant Storage Permission' below"
         }
     }
 
     // ── Storage permissions ───────────────────────────────────────────────────
 
-    /**
-     * Called only when user taps Start or explicitly requests permission.
-     * NEVER called from onCreate.
-     */
     private fun requestStoragePermissions() {
         when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
@@ -115,7 +186,6 @@ class MainActivity : AppCompatActivity() {
                             )
                         )
                     } catch (e: Exception) {
-                        // Fallback if the specific app intent isn't supported
                         manageStorageLauncher.launch(
                             Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
                         )
@@ -137,7 +207,6 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
             }
-            // else: < Android 6, no runtime permission needed
         }
     }
 
@@ -148,8 +217,6 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == REQ_STORAGE) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 Toast.makeText(this, "✅ Storage permission granted", Toast.LENGTH_SHORT).show()
-                // Permission was just granted — now attempt to start if user was trying to start
-                // Do NOT create folder yet; startCapture() will handle it
             } else {
                 Toast.makeText(
                     this,
@@ -163,14 +230,12 @@ class MainActivity : AppCompatActivity() {
     // ── Capture control ───────────────────────────────────────────────────────
 
     private fun startCapture() {
-        // Step 1: check accessibility
         if (!isAccessibilityServiceEnabled()) {
             Toast.makeText(this, "⚠️ Enable Accessibility Service first!", Toast.LENGTH_LONG).show()
             openAccessibilitySettings()
             return
         }
 
-        // Step 2: check storage permission — if not granted, request it and bail
         if (!hasStoragePermission()) {
             Toast.makeText(
                 this,
@@ -181,13 +246,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Step 3: create folder NOW (only reaches here if permission is confirmed)
-        if (!tryCreateOutputDir()) {
-            // tryCreateOutputDir already shows the relevant Toast — just abort
-            return
-        }
+        if (!tryCreateOutputDir()) return
 
-        // Step 4: start
         val interval = etInterval.text.toString().toIntOrNull()?.coerceAtLeast(100) ?: 1000
         startService(Intent(this, UIHierarchyService::class.java).apply {
             action = UIHierarchyService.ACTION_START
@@ -203,20 +263,13 @@ class MainActivity : AppCompatActivity() {
         uiHandler.postDelayed({ updateUI() }, 400)
     }
 
-    // ── Folder creation — ONLY called from startCapture(), NEVER from onCreate ─
+    // ── Folder creation ───────────────────────────────────────────────────────
 
-    /**
-     * Uses Environment.getExternalStorageDirectory() (not a hardcoded path)
-     * so it works on all devices regardless of actual mount point.
-     */
     private fun tryCreateOutputDir(): Boolean {
         val dir = File(Environment.getExternalStorageDirectory(), "Controller")
 
         return when {
-            dir.exists() && dir.isDirectory -> {
-                // Folder already there — silently proceed
-                true
-            }
+            dir.exists() && dir.isDirectory -> true
             dir.exists() && !dir.isDirectory -> {
                 Toast.makeText(
                     this,
@@ -272,15 +325,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun hasStoragePermission(): Boolean = when {
-        // Android 11+ (API 30+): needs MANAGE_EXTERNAL_STORAGE ("All files access")
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
             Environment.isExternalStorageManager()
-        // Android 6–10 (API 23–29): needs WRITE_EXTERNAL_STORAGE
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ->
             ContextCompat.checkSelfPermission(
                 this, Manifest.permission.WRITE_EXTERNAL_STORAGE
             ) == PackageManager.PERMISSION_GRANTED
-        // Android 5 and below: permission granted at install time
         else -> true
     }
 
