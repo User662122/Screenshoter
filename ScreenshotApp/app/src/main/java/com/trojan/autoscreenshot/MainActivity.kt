@@ -231,11 +231,14 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "✅ Created folder: ${dir.absolutePath}", Toast.LENGTH_SHORT).show()
                     true
                 } else {
+                    val hint = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        "Go to Settings → Apps → UIHierarchyCapture\nand grant 'All files access'."
+                    } else {
+                        "Go to Settings → Apps → UIHierarchyCapture → Permissions\nand grant Storage permission."
+                    }
                     Toast.makeText(
                         this,
-                        "❌ Failed to create folder: ${dir.absolutePath}\n" +
-                        "Go to Settings → Apps → UIHierarchyCapture → Permissions\n" +
-                        "and grant 'All files access'.",
+                        "❌ Failed to create folder: ${dir.absolutePath}\n$hint",
                         Toast.LENGTH_LONG
                     ).show()
                     false
@@ -269,12 +272,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun hasStoragePermission(): Boolean = when {
+        // Android 11+ (API 30+): needs MANAGE_EXTERNAL_STORAGE ("All files access")
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
             Environment.isExternalStorageManager()
+        // Android 6–10 (API 23–29): needs WRITE_EXTERNAL_STORAGE
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ->
             ContextCompat.checkSelfPermission(
                 this, Manifest.permission.WRITE_EXTERNAL_STORAGE
             ) == PackageManager.PERMISSION_GRANTED
+        // Android 5 and below: permission granted at install time
         else -> true
     }
 
