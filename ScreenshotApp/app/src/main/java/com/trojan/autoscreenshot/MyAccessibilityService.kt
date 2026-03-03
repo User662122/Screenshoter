@@ -68,6 +68,9 @@ class MyAccessibilityService : AccessibilityService() {
         traverseNode(root, builder)
 
         saveToFile(builder.toString())
+        
+        // Root node should be recycled after the entire traversal
+        root.recycle()
     }
 
     private fun findWebView(node: AccessibilityNodeInfo?): Boolean {
@@ -79,11 +82,13 @@ class MyAccessibilityService : AccessibilityService() {
 
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
-            if (findWebView(child)) {
-                child?.recycle()
-                return true
+            if (child != null) {
+                if (findWebView(child)) {
+                    child.recycle()
+                    return true
+                }
+                child.recycle()
             }
-            child?.recycle()
         }
 
         return false
@@ -93,7 +98,6 @@ class MyAccessibilityService : AccessibilityService() {
         if (node == null) return
 
         if (node.isClickable) {
-
             val rect = Rect()
             node.getBoundsInScreen(rect)
 
@@ -105,9 +109,8 @@ class MyAccessibilityService : AccessibilityService() {
             builder.append("Clickable: ${node.isClickable}\n")
             builder.append("Enabled: ${node.isEnabled}\n")
             builder.append("Bounds: $rect\n")
-            builder.append("Index: ${node.parent?.let { getChildIndex(it, node) } ?: -1}\n")
-
-            // Checkbox / Tick extra fields
+            
+            // Avoid calling getChildIndex which performs another traversal/recycling
             builder.append("Checkable: ${node.isCheckable}\n")
             builder.append("Checked: ${node.isChecked}\n")
             builder.append("Selected: ${node.isSelected}\n")
@@ -115,18 +118,11 @@ class MyAccessibilityService : AccessibilityService() {
 
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
-            traverseNode(child, builder)
-            child?.recycle()
+            if (child != null) {
+                traverseNode(child, builder)
+                child.recycle()
+            }
         }
-        
-        node.recycle()
-    }
-
-    private fun getChildIndex(parent: AccessibilityNodeInfo, child: AccessibilityNodeInfo): Int {
-        for (i in 0 until parent.childCount) {
-            if (parent.getChild(i) == child) return i
-        }
-        return -1
     }
 
     private fun saveToFile(text: String) {
