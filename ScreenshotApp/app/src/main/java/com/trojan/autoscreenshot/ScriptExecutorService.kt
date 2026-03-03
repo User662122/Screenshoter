@@ -39,7 +39,7 @@ class ScriptExecutorService : AccessibilityService() {
         var instance: ScriptExecutorService? = null
         private const val CMD_FILE    = "commands.json"
         private const val RESULT_FILE = "results.json"
-        private const val DUMP_FILE   = "ui_dump.json"   // NEW: failure dump file
+        private const val DUMP_FILE   = "ui_dump.json"
         private const val DIR_NAME    = "Controller"
         private const val POLL_MS     = 300L
     }
@@ -147,27 +147,8 @@ class ScriptExecutorService : AccessibilityService() {
         }
     }
 
-    // ── NEW: Dump all clickable / visible UI elements on failure ──────────────
+    // ── Dump all clickable / visible UI elements on failure ──────────────────
 
-    /**
-     * Walks the full accessibility tree and collects every node that is:
-     *  - clickable, OR
-     *  - has text, OR
-     *  - has a content description
-     *
-     * Writes /storage/emulated/0/Controller/ui_dump.json and shows a toast
-     * telling you how many elements were found.
-     *
-     * Each entry looks like:
-     * {
-     *   "text":         "Create Airdrop",
-     *   "resource_id":  "com.example:id/btn_create",
-     *   "content_desc": "Create button",
-     *   "class":        "android.widget.Button",
-     *   "clickable":    true,
-     *   "bounds":       "[0,1200][1080,1350]"
-     * }
-     */
     private fun dumpClickableElements(failedAction: String, failMsg: String) {
         try {
             val root = rootInActiveWindow
@@ -190,10 +171,8 @@ class ScriptExecutorService : AccessibilityService() {
             controlDir.mkdirs()
             FileWriter(dumpFile).use { it.write(out.toString(2)) }
 
-            // Short toast: how many elements, hint at the file
             toast("🔍 Dump: ${elements.length()} elements → ui_dump.json", long = true)
 
-            // Also log top clickable elements to logcat for quick reading
             val clickable = mutableListOf<String>()
             for (i in 0 until elements.length()) {
                 val el = elements.getJSONObject(i)
@@ -214,22 +193,17 @@ class ScriptExecutorService : AccessibilityService() {
         }
     }
 
-    /**
-     * Recursively walks the accessibility tree.
-     * Adds a node to [out] if it is clickable OR has useful text/desc.
-     */
     private fun collectElements(node: AccessibilityNodeInfo, out: JSONArray) {
         try {
-            val text    = node.text?.toString()?.trim() ?: ""
-            val resId   = node.viewIdResourceName ?: ""
-            val desc    = node.contentDescription?.toString()?.trim() ?: ""
-            val cls     = node.className?.toString() ?: ""
+            val text      = node.text?.toString()?.trim() ?: ""
+            val resId     = node.viewIdResourceName ?: ""
+            val desc      = node.contentDescription?.toString()?.trim() ?: ""
+            val cls       = node.className?.toString() ?: ""
             val clickable = node.isClickable
 
             val bounds = Rect()
             node.getBoundsInScreen(bounds)
 
-            // Only include nodes that have something useful
             if (clickable || text.isNotEmpty() || desc.isNotEmpty()) {
                 out.put(JSONObject().apply {
                     put("text",         text)
@@ -514,21 +488,21 @@ class ScriptExecutorService : AccessibilityService() {
         val resId = action.optString("resource_id", "")
         val desc  = action.optString("content_desc", "")
 
-        val root = rootInActiveWindow ?: return makeResult("find_and_click", false, "No active window")
+        val root = rootInActiveWindow
+            ?: return makeResult("find_and_click", false, "No active window")
+
         val node = when {
             resId.isNotEmpty() -> findNodeByResourceId(root, resId)
             text.isNotEmpty()  -> findNodeByText(root, text)
             desc.isNotEmpty()  -> findNodeByDesc(root, desc)
             else               -> null
-        } ?: return makeResult("find_and_click", false,
-            "Element not found: text='$text' resId='$resId' desc='$desc'")
+        } ?: return makeResult(
+            "find_and_click", false,
+            "Element not found: text='$text' resId='$resId' desc='$desc'"
+        )
 
-        node.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS)
-        Thread.sleep(80)
-        val done = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        node.recycle()
-        return makeResult("find_and_click", done,
-            "Clicked: ${text.ifEmpty { resId.ifEmpty { desc } }}")
+        val label = text.ifEmpty { resId.ifEmpty { desc } }
+        return clickNodeSafely(node, "find_and_click", label)
     }
 
     private fun doFindAndType(action: JSONObject): JSONObject {
@@ -536,21 +510,44 @@ class ScriptExecutorService : AccessibilityService() {
         val resId = action.optString("resource_id", "")
         val value = action.optString("value", "")
 
-        val root = rootInActiveWindow ?: return makeResult("find_and_type", false, "No active window")
+        val root = rootInActiveWindow
+            ?: return makeResult("find_and_type", false, "No active window")
+
         val node = when {
             resId.isNotEmpty() -> findNodeByResourceId(root, resId)
             text.isNotEmpty()  -> findNodeByText(root, text)
             else               -> findFirstInput(root)
         } ?: return makeResult("find_and_type", false, "Input element not found")
 
-        node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        Thread.sleep(150)
+        // Grab bounds before recycling, tap by coordinate to avoid sealed-instance crash
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        node.recycle()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            performTap(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+        }
+        Thread.sleep(200)
+
+        // Re-fetch a fresh node after tap
+        val root2 = rootInActiveWindow
+            ?: return makeResult("find_and_type", false, "No active window after tap")
+        val freshNode = when {
+            resId.isNotEmpty() -> findNodeByResourceId(root2, resId)
+            text.isNotEmpty()  -> findNodeByText(root2, text)
+            else               -> findFirstInput(root2)
+        } ?: return makeResult("find_and_type", false, "Input lost focus after tap")
 
         val args = Bundle().apply {
             putString(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
         }
-        val done = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-        node.recycle()
+        val done = try {
+            freshNode.refresh()
+            freshNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        } catch (e: Exception) {
+            false
+        }
+        freshNode.recycle()
         return makeResult("find_and_type", done, "Typed '$value' into '$text'")
     }
 
@@ -558,6 +555,56 @@ class ScriptExecutorService : AccessibilityService() {
         val ms = action.optLong("ms", 1000L)
         Thread.sleep(ms)
         return makeResult("wait", true, "Waited ${ms}ms")
+    }
+
+    /**
+     * Safely clicks a node by:
+     * 1. Calling node.refresh() to re-seal the instance
+     * 2. Trying ACTION_CLICK via accessibility
+     * 3. Falling back to a coordinate tap via gesture API if that fails
+     *
+     * This fixes: "Cannot perform this action on a not sealed instance"
+     * which commonly occurs with nodes inside WebViews or from
+     * findAccessibilityNodeInfosByText() results.
+     */
+    private fun clickNodeSafely(
+        node: AccessibilityNodeInfo,
+        actionName: String,
+        label: String
+    ): JSONObject {
+        // Grab bounds FIRST before any recycle
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+
+        // Try accessibility click on a refreshed node
+        val accessibilityClicked = try {
+            node.refresh()  // re-seals the instance
+            node.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS)
+            Thread.sleep(50)
+            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        } catch (e: Exception) {
+            false
+        } finally {
+            node.recycle()
+        }
+
+        if (accessibilityClicked) {
+            return makeResult(actionName, true, "Clicked (accessibility): $label")
+        }
+
+        // Fallback: tap the center of the element by coordinates
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !bounds.isEmpty) {
+            val cx = bounds.centerX().toFloat()
+            val cy = bounds.centerY().toFloat()
+            val tapped = performTap(cx, cy)
+            return makeResult(
+                actionName, tapped,
+                if (tapped) "Clicked (gesture tap $cx,$cy): $label"
+                else "Gesture tap failed at ($cx,$cy): $label"
+            )
+        }
+
+        return makeResult(actionName, false, "All click strategies failed: $label")
     }
 
     // ── Gesture helpers ───────────────────────────────────────────────────────
