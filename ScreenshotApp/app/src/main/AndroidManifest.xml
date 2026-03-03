@@ -1,25 +1,15 @@
-<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
     package="com.uitreecapture">
 
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"/>
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="29"/>
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
-        tools:ignore="ScopedStorage"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
 
     <application
         android:allowBackup="true"
-        android:label="UIHierarchyCapture"
-        android:theme="@style/Theme.AppCompat.DayNight"
-        android:requestLegacyExternalStorage="true">
+        android:label="UI Tree Capture"
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
-        <activity
-            android:name=".MainActivity"
+        <activity android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -28,42 +18,17 @@
         </activity>
 
         <service
-            android:name=".UIHierarchyService"
-            android:foregroundServiceType="specialUse"
-            android:exported="false">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="monitorDeviceState"/>
-        </service>
-
-        <!-- Original capture service -->
-        <service
-            android:name=".UIHierarchyAccessibilityService"
-            android:exported="true"
-            android:label="UIHierarchyCapture"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            android:name=".MyAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService"/>
             </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config"/>
-        </service>
 
-        <!-- NEW: Script Executor — enable in Settings > Accessibility > Script Executor -->
-        <service
-            android:name=".ScriptExecutorService"
-            android:exported="true"
-            android:label="Script Executor"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService"/>
-            </intent-filter>
             <meta-data
                 android:name="android.accessibilityservice"
-                android:resource="@xml/script_executor_config"/>
+                android:resource="@xml/accessibility_config"/>
         </service>
 
     </application>
-
 </manifest>
