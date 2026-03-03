@@ -132,43 +132,39 @@ class MyAccessibilityService : AccessibilityService() {
 
     private fun saveToFile(text: String) {
         try {
-            // Try to save to external storage first (with permission check)
+            // Check if permission is granted
+            val hasPermission = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (!hasPermission) {
+                showToast("❌ Storage permission not granted. Please grant permission in app settings.")
+                return
+            }
+
+            // Try to save to external storage first
             val externalSaved = trySaveToExternalStorage(text)
             
             if (!externalSaved) {
-                // Fallback to app cache directory (no permission needed)
+                // Fallback to app cache if external storage fails
                 trySaveToAppCache(text)
             }
 
         } catch (e: Exception) {
-            showToast("Error: ${e.message}")
+            showToast("❌ Error: ${e.message}")
             e.printStackTrace()
         }
     }
 
     private fun trySaveToExternalStorage(text: String): Boolean {
-        try {
-            // Check storage permission
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // Android 11+: Check MANAGE_EXTERNAL_STORAGE
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.MANAGE_EXTERNAL_STORAGE)
-                    != PackageManager.PERMISSION_GRANTED) {
-                    showToast("Storage permission not granted")
-                    return false
-                }
-            } else {
-                // Android 10 and below: Check WRITE_EXTERNAL_STORAGE
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    != PackageManager.PERMISSION_GRANTED) {
-                    showToast("Storage permission not granted")
-                    return false
-                }
-            }
-
+        return try {
             val dir = File(Environment.getExternalStorageDirectory(), "Controller")
+            
+            // Create directory if it doesn't exist
             if (!dir.exists()) {
                 if (!dir.mkdirs()) {
-                    showToast("Failed to create directory")
+                    showToast("❌ Failed to create Controller directory")
                     return false
                 }
             }
@@ -178,15 +174,15 @@ class MyAccessibilityService : AccessibilityService() {
             writer.write(text)
             writer.close()
             
-            showToast("✓ UI data saved to: Controller/ui_capture.txt")
-            return true
+            showToast("✓ Saved to: /storage/emulated/0/Controller/ui_capture.txt")
+            true
 
         } catch (e: SecurityException) {
-            showToast("Security Error: ${e.message}")
-            return false
+            showToast("❌ Security Error: Permission denied for external storage")
+            false
         } catch (e: Exception) {
-            showToast("Error saving to external: ${e.message}")
-            return false
+            showToast("❌ Error saving to external: ${e.javaClass.simpleName}")
+            false
         }
     }
 
@@ -198,9 +194,9 @@ class MyAccessibilityService : AccessibilityService() {
             writer.write(text)
             writer.close()
             
-            showToast("✓ UI data saved to: App Cache")
+            showToast("✓ Saved to: App Cache (${cacheDir.absolutePath})")
         } catch (e: Exception) {
-            showToast("Error saving to cache: ${e.message}")
+            showToast("❌ Error saving to cache: ${e.message}")
         }
     }
 
