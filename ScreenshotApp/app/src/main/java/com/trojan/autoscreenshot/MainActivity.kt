@@ -1,7 +1,6 @@
 package com.uitreecapture
 
 import android.Manifest
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -90,20 +89,46 @@ class MainActivity : AppCompatActivity() {
     private fun checkAccessibilityStatus() {
         if (isAccessibilityServiceEnabled()) {
             statusText.text = "Status: Accessibility service is enabled ✓"
+            statusText.setTextColor(0xFF00FF00.toInt()) // Green
         } else {
-            statusText.text = "Status: Please enable accessibility service"
+            statusText.text = "Status: ❌ Accessibility service is NOT enabled"
+            statusText.setTextColor(0xFFFF0000.toInt()) // Red
         }
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val serviceName = "$packageName/.MyAccessibilityService"
         try {
-            val enabled = Settings.Secure.getString(
+            val enabledServices = Settings.Secure.getString(
                 contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            
+            // Check multiple possible formats
+            val possibleNames = listOf(
+                "com.uitreecapture/.MyAccessibilityService",
+                "com.trojan.autoscreenshot/.MyAccessibilityService",
+                "uitreecapture/MyAccessibilityService",
+                "autoscreenshot/MyAccessibilityService",
+                "MyAccessibilityService"
             )
-            return enabled?.contains(serviceName) == true
+            
+            for (name in possibleNames) {
+                if (enabledServices.contains(name)) {
+                    return true
+                }
+            }
+            
+            // Also check if any service from our package is enabled
+            val services = enabledServices.split(":")
+            for (service in services) {
+                if (service.contains("uitreecapture") || service.contains("autoscreenshot")) {
+                    return true
+                }
+            }
+            
+            return false
         } catch (e: Exception) {
+            e.printStackTrace()
             return false
         }
     }
