@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import android.Manifest
 import android.content.pm.PackageManager
@@ -131,28 +132,44 @@ class MyAccessibilityService : AccessibilityService() {
 
     private fun saveToFile(text: String) {
         try {
+            // Try to save to external storage first (with permission check)
+            val externalSaved = trySaveToExternalStorage(text)
+            
+            if (!externalSaved) {
+                // Fallback to app cache directory (no permission needed)
+                trySaveToAppCache(text)
+            }
+
+        } catch (e: Exception) {
+            showToast("Error: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    private fun trySaveToExternalStorage(text: String): Boolean {
+        try {
             // Check storage permission
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 // Android 11+: Check MANAGE_EXTERNAL_STORAGE
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.MANAGE_EXTERNAL_STORAGE)
                     != PackageManager.PERMISSION_GRANTED) {
-                    logError("MANAGE_EXTERNAL_STORAGE permission not granted")
-                    return
+                    showToast("Storage permission not granted")
+                    return false
                 }
             } else {
                 // Android 10 and below: Check WRITE_EXTERNAL_STORAGE
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
                     != PackageManager.PERMISSION_GRANTED) {
-                    logError("WRITE_EXTERNAL_STORAGE permission not granted")
-                    return
+                    showToast("Storage permission not granted")
+                    return false
                 }
             }
 
             val dir = File(Environment.getExternalStorageDirectory(), "Controller")
             if (!dir.exists()) {
                 if (!dir.mkdirs()) {
-                    logError("Failed to create directory: ${dir.absolutePath}")
-                    return
+                    showToast("Failed to create directory")
+                    return false
                 }
             }
 
@@ -161,43 +178,35 @@ class MyAccessibilityService : AccessibilityService() {
             writer.write(text)
             writer.close()
             
-            logSuccess("UI data saved to: ${file.absolutePath}")
+            showToast("✓ UI data saved to: Controller/ui_capture.txt")
+            return true
 
         } catch (e: SecurityException) {
-            logError("SecurityException: ${e.message}")
+            showToast("Security Error: ${e.message}")
+            return false
         } catch (e: Exception) {
-            logError("Error saving file: ${e.message}")
-            e.printStackTrace()
+            showToast("Error saving to external: ${e.message}")
+            return false
         }
     }
 
-    private fun logSuccess(message: String) {
+    private fun trySaveToAppCache(text: String) {
         try {
-            val logDir = File(Environment.getExternalStorageDirectory(), "Controller")
-            if (!logDir.exists()) {
-                logDir.mkdirs()
-            }
-            val logFile = File(logDir, "capture_log.txt")
-            val writer = FileWriter(logFile, true)
-            writer.write("[SUCCESS] ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())} - $message\n")
+            val cacheDir = cacheDir
+            val file = File(cacheDir, "ui_capture.txt")
+            val writer = FileWriter(file, true) // Append mode
+            writer.write(text)
             writer.close()
+            
+            showToast("✓ UI data saved to: App Cache")
         } catch (e: Exception) {
-            e.printStackTrace()
+            showToast("Error saving to cache: ${e.message}")
         }
     }
 
-    private fun logError(message: String) {
-        try {
-            val logDir = File(Environment.getExternalStorageDirectory(), "Controller")
-            if (!logDir.exists()) {
-                logDir.mkdirs()
-            }
-            val logFile = File(logDir, "capture_log.txt")
-            val writer = FileWriter(logFile, true)
-            writer.write("[ERROR] ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())} - $message\n")
-            writer.close()
-        } catch (e: Exception) {
-            e.printStackTrace()
+    private fun showToast(message: String) {
+        handler.post {
+            Toast.makeText(this@MyAccessibilityService, message, Toast.LENGTH_LONG).show()
         }
     }
 }
