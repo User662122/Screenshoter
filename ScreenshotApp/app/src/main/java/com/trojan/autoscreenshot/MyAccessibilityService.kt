@@ -1,6 +1,7 @@
 package com.uitreecapture
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.graphics.Rect
 import android.os.Environment
 import android.os.Handler
@@ -17,10 +18,13 @@ class MyAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val interval: Long = 5000  // 5 seconds
+    private var isCapturing = false
 
     private val captureRunnable = object : Runnable {
         override fun run() {
-            captureUI()
+            if (isCapturing) {
+                captureUI()
+            }
             handler.postDelayed(this, interval)
         }
     }
@@ -28,6 +32,15 @@ class MyAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         handler.post(captureRunnable)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.let {
+            if (it.action == "CAPTURE_TOGGLE") {
+                isCapturing = it.getBooleanExtra("capture_enabled", false)
+            }
+        }
+        return super.onStartCommand(intent, flags, startId)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -65,7 +78,12 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         for (i in 0 until node.childCount) {
-            if (findWebView(node.getChild(i))) return true
+            val child = node.getChild(i)
+            if (findWebView(child)) {
+                child?.recycle()
+                return true
+            }
+            child?.recycle()
         }
 
         return false
@@ -89,15 +107,19 @@ class MyAccessibilityService : AccessibilityService() {
             builder.append("Bounds: $rect\n")
             builder.append("Index: ${node.parent?.let { getChildIndex(it, node) } ?: -1}\n")
 
-            // ✅ Checkbox / Tick extra fields
+            // Checkbox / Tick extra fields
             builder.append("Checkable: ${node.isCheckable}\n")
             builder.append("Checked: ${node.isChecked}\n")
             builder.append("Selected: ${node.isSelected}\n")
         }
 
         for (i in 0 until node.childCount) {
-            traverseNode(node.getChild(i), builder)
+            val child = node.getChild(i)
+            traverseNode(child, builder)
+            child?.recycle()
         }
+        
+        node.recycle()
     }
 
     private fun getChildIndex(parent: AccessibilityNodeInfo, child: AccessibilityNodeInfo): Int {
@@ -115,7 +137,7 @@ class MyAccessibilityService : AccessibilityService() {
             }
 
             val file = File(dir, "ui_capture.txt")
-            val writer = FileWriter(file, false) // overwrite every 5 sec
+            val writer = FileWriter(file, true) // Changed to append mode
             writer.write(text)
             writer.close()
 
