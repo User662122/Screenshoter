@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:gravity="center">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="UI Tree Capture"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="32dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Please enable accessibility service for this app to capture UI data."
+        android:textSize="16sp"
+        android:gravity="center"
+        android:layout_marginBottom="24dp"/>
+
+    <Button
+        android:layout_width="200dp"
+        android:layout_height="wrap_content"
+        android:text="START CAPTURE"
+        android:id="@+id/toggleCaptureButton"
+        android:onClick="toggleCapture"
+        android:padding="12dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Status: Waiting for accessibility service..."
+        android:textSize="14sp"
+        android:layout_marginTop="24dp"
+        android:id="@+id/statusText"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Capture: OFF"
+        android:textSize="16sp"
+        android:layout_marginTop="16dp"
+        android:id="@+id/captureStatusText"
+        android:textColor="#FF0000"/>
+
+</LinearLayout>
