@@ -1,0 +1,109 @@
+package com.uitreecapture
+
+import android.accessibilityservice.AccessibilityService
+import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import java.io.File
+import java.io.FileWriter
+import java.text.SimpleDateFormat
+import java.util.*
+
+class MyAccessibilityService : AccessibilityService() {
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val interval: Long = 5000
+
+    private val captureRunnable = object : Runnable {
+        override fun run() {
+            captureUI()
+            handler.postDelayed(this, interval)
+        }
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        handler.post(captureRunnable)
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+
+    override fun onInterrupt() {}
+
+    private fun captureUI() {
+        val root = rootInActiveWindow ?: return
+        val builder = StringBuilder()
+
+        builder.append("\n==============================\n")
+        builder.append("Time: ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())}\n")
+        builder.append("Package: ${root.packageName}\n")
+
+        val webView = findWebView(root)
+        builder.append("WebView Present: $webView\n")
+
+        builder.append("\nClickable Elements:\n")
+        traverseNode(root, builder)
+
+        saveToFile(builder.toString())
+    }
+
+    private fun findWebView(node: AccessibilityNodeInfo?): Boolean {
+        if (node == null) return false
+        if (node.className?.contains("WebView") == true) return true
+
+        for (i in 0 until node.childCount) {
+            if (findWebView(node.getChild(i))) return true
+        }
+        return false
+    }
+
+    private fun traverseNode(node: AccessibilityNodeInfo?, builder: StringBuilder) {
+        if (node == null) return
+
+        if (node.isClickable) {
+
+            builder.append("\n------------------\n")
+            builder.append("Text: ${node.text}\n")
+            builder.append("ContentDesc: ${node.contentDescription}\n")
+            builder.append("ResourceID: ${node.viewIdResourceName}\n")
+            builder.append("Class: ${node.className}\n")
+            builder.append("Clickable: ${node.isClickable}\n")
+            builder.append("Enabled: ${node.isEnabled}\n")
+            builder.append("Bounds: ${node.boundsInScreen}\n")
+            builder.append("Index: ${node.parent?.let { getChildIndex(it, node) }}\n")
+
+            // Checkbox extra fields
+            builder.append("Checkable: ${node.isCheckable}\n")
+            builder.append("Checked: ${node.isChecked}\n")
+            builder.append("Selected: ${node.isSelected}\n")
+        }
+
+        for (i in 0 until node.childCount) {
+            traverseNode(node.getChild(i), builder)
+        }
+    }
+
+    private fun getChildIndex(parent: AccessibilityNodeInfo, child: AccessibilityNodeInfo): Int {
+        for (i in 0 until parent.childCount) {
+            if (parent.getChild(i) == child) return i
+        }
+        return -1
+    }
+
+    private fun saveToFile(text: String) {
+        try {
+            val dir = File(Environment.getExternalStorageDirectory(), "Controller")
+            if (!dir.exists()) dir.mkdirs()
+
+            val file = File(dir, "ui_capture.txt")
+            val writer = FileWriter(file, false)
+            writer.write(text)
+            writer.close()
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
