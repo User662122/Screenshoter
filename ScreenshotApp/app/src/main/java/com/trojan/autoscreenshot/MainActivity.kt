@@ -14,6 +14,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -72,7 +73,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestStoragePermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11+: Request MANAGE_EXTERNAL_STORAGE
+            if (ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.MANAGE_EXTERNAL_STORAGE),
+                    101
+                )
+            }
+        } else {
+            // Android 10 and below: Request WRITE_EXTERNAL_STORAGE
             if (ContextCompat.checkSelfPermission(this,
                     Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -136,5 +150,21 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         checkAccessibilityStatus()
+        checkCaptureStatus()
+    }
+
+    private fun checkCaptureStatus() {
+        try {
+            val logFile = File(android.os.Environment.getExternalStorageDirectory(), "Controller/capture_log.txt")
+            if (logFile.exists()) {
+                val lastLine = logFile.readLines().lastOrNull()
+                if (lastLine != null && lastLine.contains("[ERROR]")) {
+                    val errorMsg = lastLine.substringAfter("[ERROR] ").substringAfter(" - ")
+                    Toast.makeText(this, "Capture Error: $errorMsg", Toast.LENGTH_LONG).show()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }

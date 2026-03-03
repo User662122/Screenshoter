@@ -3,11 +3,15 @@ package com.uitreecapture
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.graphics.Rect
+import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.content.ContextCompat
+import android.Manifest
+import android.content.pm.PackageManager
 import java.io.File
 import java.io.FileWriter
 import java.text.SimpleDateFormat
@@ -127,16 +131,71 @@ class MyAccessibilityService : AccessibilityService() {
 
     private fun saveToFile(text: String) {
         try {
+            // Check storage permission
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // Android 11+: Check MANAGE_EXTERNAL_STORAGE
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                    logError("MANAGE_EXTERNAL_STORAGE permission not granted")
+                    return
+                }
+            } else {
+                // Android 10 and below: Check WRITE_EXTERNAL_STORAGE
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                    logError("WRITE_EXTERNAL_STORAGE permission not granted")
+                    return
+                }
+            }
+
             val dir = File(Environment.getExternalStorageDirectory(), "Controller")
             if (!dir.exists()) {
-                dir.mkdirs()
+                if (!dir.mkdirs()) {
+                    logError("Failed to create directory: ${dir.absolutePath}")
+                    return
+                }
             }
 
             val file = File(dir, "ui_capture.txt")
-            val writer = FileWriter(file, true) // Changed to append mode
+            val writer = FileWriter(file, true) // Append mode
             writer.write(text)
             writer.close()
+            
+            logSuccess("UI data saved to: ${file.absolutePath}")
 
+        } catch (e: SecurityException) {
+            logError("SecurityException: ${e.message}")
+        } catch (e: Exception) {
+            logError("Error saving file: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    private fun logSuccess(message: String) {
+        try {
+            val logDir = File(Environment.getExternalStorageDirectory(), "Controller")
+            if (!logDir.exists()) {
+                logDir.mkdirs()
+            }
+            val logFile = File(logDir, "capture_log.txt")
+            val writer = FileWriter(logFile, true)
+            writer.write("[SUCCESS] ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())} - $message\n")
+            writer.close()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun logError(message: String) {
+        try {
+            val logDir = File(Environment.getExternalStorageDirectory(), "Controller")
+            if (!logDir.exists()) {
+                logDir.mkdirs()
+            }
+            val logFile = File(logDir, "capture_log.txt")
+            val writer = FileWriter(logFile, true)
+            writer.write("[ERROR] ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())} - $message\n")
+            writer.close()
         } catch (e: Exception) {
             e.printStackTrace()
         }
