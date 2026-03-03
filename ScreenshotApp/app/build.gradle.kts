@@ -6,7 +6,7 @@ plugins {
     id("com.google.gms.google-services")
     
     // Add the Crashlytics Gradle plugin
-    id("com.google.firebase.firebase-crashlytics")
+    id("com.google.firebase.crashlytics")
 }
 
 android {
