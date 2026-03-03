@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "460373189891",
+    "project_id": "crsh-16ace",
+    "storage_bucket": "crsh-16ace.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:460373189891:android:63843dddc5e3adc0e1f536",
+        "android_client_info": {
+          "package_name": "com.uitreecapture"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBYtidZXXiiceGdBwXfJCKYcey9X4vS58o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
