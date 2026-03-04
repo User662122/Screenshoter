@@ -8,6 +8,7 @@ This app allows you to automate interactions with the Kiwi Browser using simple 
 2.  **Grant Storage Permission**: Ensure the app has permission to read and write to external storage.
 3.  **Create a Script**: Create a file named `script.txt` in the `/sdcard/Controller/` directory on your device.
 4.  **Run the Script**: Open the Screenshoter app and tap the "RUN SCRIPT" button.
+5.  **Check Results**: After execution, a `result.txt` file will be created in the same `/sdcard/Controller/` directory, showing which commands succeeded and which failed.
 
 ## Script Commands
 
