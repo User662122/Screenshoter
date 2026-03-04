@@ -1,208 +1,151 @@
 package com.uitreecapture
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.content.Intent
+import android.graphics.Path
 import android.graphics.Rect
-import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
-import androidx.core.content.ContextCompat
-import android.Manifest
-import android.content.pm.PackageManager
 import java.io.File
-import java.io.FileWriter
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class MyAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private val interval: Long = 5000  // 5 seconds
-    private var isCapturing = false
 
-    private val captureRunnable = object : Runnable {
-        override fun run() {
-            if (isCapturing) {
-                captureUI()
-            }
-            handler.postDelayed(this, interval)
-        }
-    }
-
-    override fun onServiceConnected() {
-        super.onServiceConnected()
-        handler.post(captureRunnable)
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        intent?.let {
-            if (it.action == "CAPTURE_TOGGLE") {
-                isCapturing = it.getBooleanExtra("capture_enabled", false)
-            }
-        }
-        return super.onStartCommand(intent, flags, startId)
-    }
-
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Not needed for interval-based capture
-    }
-
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 
-    private fun captureUI() {
-        val root = rootInActiveWindow ?: return
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
-        val builder = StringBuilder()
+        intent?.let {
+            when (it.action) {
 
-        builder.append("\n==============================\n")
-        builder.append("Time: ${
-            SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        }\n")
-
-        builder.append("Package: ${root.packageName ?: "null"}\n")
-        builder.append("WebView Present: ${findWebView(root)}\n")
-        builder.append("Scrollable: ${root.isScrollable}\n")
-
-        builder.append("\nClickable Elements:\n")
-
-        traverseNode(root, builder)
-
-        saveToFile(builder.toString())
-        
-        // Root node should be recycled after the entire traversal
-        root.recycle()
-    }
-
-    private fun findWebView(node: AccessibilityNodeInfo?): Boolean {
-        if (node == null) return false
-
-        if (node.className?.contains("WebView") == true) {
-            return true
-        }
-
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) {
-                if (findWebView(child)) {
-                    child.recycle()
-                    return true
+                "RUN_SCRIPT" -> {
+                    runScript()
                 }
-                child.recycle()
             }
         }
 
-        return false
+        return START_STICKY
     }
 
-    private fun traverseNode(node: AccessibilityNodeInfo?, builder: StringBuilder) {
-        if (node == null) return
+    private fun runScript() {
 
-        if (node.isClickable) {
-            val rect = Rect()
-            node.getBoundsInScreen(rect)
-
-            builder.append("\n------------------\n")
-            builder.append("Text: ${node.text ?: "null"}\n")
-            builder.append("ContentDesc: ${node.contentDescription ?: "null"}\n")
-            builder.append("ResourceID: ${node.viewIdResourceName ?: "null"}\n")
-            builder.append("Class: ${node.className ?: "null"}\n")
-            builder.append("Clickable: ${node.isClickable}\n")
-            builder.append("Enabled: ${node.isEnabled}\n")
-            builder.append("Bounds: $rect\n")
-            
-            // Avoid calling getChildIndex which performs another traversal/recycling
-            builder.append("Checkable: ${node.isCheckable}\n")
-            builder.append("Checked: ${node.isChecked}\n")
-            builder.append("Selected: ${node.isSelected}\n")
-        }
-
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) {
-                traverseNode(child, builder)
-                child.recycle()
-            }
-        }
-    }
-
-    private fun saveToFile(text: String) {
         try {
-            // Check if permission is granted
-            val hasPermission = ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE
-            ) == PackageManager.PERMISSION_GRANTED
 
-            if (!hasPermission) {
-                showToast("❌ Storage permission not granted. Please grant permission in app settings.")
+            val file = File(Environment.getExternalStorageDirectory(), "Controller/script.txt")
+
+            if (!file.exists()) {
+                showToast("script.txt not found")
                 return
             }
 
-            // Try to save to external storage first
-            val externalSaved = trySaveToExternalStorage(text)
-            
-            if (!externalSaved) {
-                // Fallback to app cache if external storage fails
-                trySaveToAppCache(text)
-            }
+            val lines = file.readLines()
 
-        } catch (e: Exception) {
-            showToast("❌ Error: ${e.message}")
-            e.printStackTrace()
-        }
-    }
+            Thread {
 
-    private fun trySaveToExternalStorage(text: String): Boolean {
-        return try {
-            val dir = File(Environment.getExternalStorageDirectory(), "Controller")
-            
-            // Create directory if it doesn't exist
-            if (!dir.exists()) {
-                if (!dir.mkdirs()) {
-                    showToast("❌ Failed to create Controller directory")
-                    return false
+                for (lineRaw in lines) {
+
+                    val line = lineRaw.trim()
+
+                    when {
+
+                        line.startsWith("CLICK ") -> {
+                            val text = line.removePrefix("CLICK ").trim()
+                            handler.post { clickByText(text) }
+                        }
+
+                        line == "SCROLL" -> {
+                            handler.post { scrollDown() }
+                        }
+
+                        line.startsWith("WAIT ") -> {
+                            val time = line.removePrefix("WAIT ").trim().toLong()
+                            Thread.sleep(time)
+                        }
+                    }
+
+                    Thread.sleep(500)
                 }
-            }
 
-            val file = File(dir, "ui_capture.txt")
-            val writer = FileWriter(file, true) // Append mode
-            writer.write(text)
-            writer.close()
-            
-            showToast("✓ Saved to: /storage/emulated/0/Controller/ui_capture.txt")
-            true
+            }.start()
 
-        } catch (e: SecurityException) {
-            showToast("❌ Security Error: Permission denied for external storage")
-            false
         } catch (e: Exception) {
-            showToast("❌ Error saving to external: ${e.javaClass.simpleName}")
-            false
+            showToast("Script Error: ${e.message}")
         }
     }
 
-    private fun trySaveToAppCache(text: String) {
-        try {
-            val cacheDir = cacheDir
-            val file = File(cacheDir, "ui_capture.txt")
-            val writer = FileWriter(file, true) // Append mode
-            writer.write(text)
-            writer.close()
-            
-            showToast("✓ Saved to: App Cache (${cacheDir.absolutePath})")
-        } catch (e: Exception) {
-            showToast("❌ Error saving to cache: ${e.message}")
+    private fun clickByText(text: String) {
+
+        val root = rootInActiveWindow ?: return
+        val node = findNodeByText(root, text)
+
+        if (node != null) {
+
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+
+            val path = Path()
+            path.moveTo(rect.centerX().toFloat(), rect.centerY().toFloat())
+
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, 100))
+                .build()
+
+            dispatchGesture(gesture, null, null)
+            showToast("Clicked: $text")
+        } else {
+            showToast("Not found: $text")
         }
+
+        root.recycle()
     }
 
-    private fun showToast(message: String) {
+    private fun scrollDown() {
+
+        val display = resources.displayMetrics
+        val width = display.widthPixels
+        val height = display.heightPixels
+
+        val path = Path()
+        path.moveTo(width / 2f, height * 0.8f)
+        path.lineTo(width / 2f, height * 0.3f)
+
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 500))
+            .build()
+
+        dispatchGesture(gesture, null, null)
+    }
+
+    private fun findNodeByText(root: AccessibilityNodeInfo?, text: String): AccessibilityNodeInfo? {
+
+        if (root == null) return null
+
+        if (root.text?.toString()?.contains(text, true) == true)
+            return root
+
+        if (root.contentDescription?.toString()?.contains(text, true) == true)
+            return root
+
+        for (i in 0 until root.childCount) {
+            val child = root.getChild(i)
+            val result = findNodeByText(child, text)
+            if (result != null) return result
+            child?.recycle()
+        }
+
+        return null
+    }
+
+    private fun showToast(msg: String) {
         handler.post {
-            Toast.makeText(this@MyAccessibilityService, message, Toast.LENGTH_LONG).show()
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }
     }
 }
