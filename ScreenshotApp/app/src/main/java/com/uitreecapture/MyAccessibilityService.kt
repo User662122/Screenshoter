@@ -52,8 +52,18 @@ class MyAccessibilityService : AccessibilityService() {
                     val line = lineRaw.trim()
                     if (line.isEmpty() || line.startsWith("#")) continue
 
-                    val parts = line.split(" ", limit = 3)
-                    val command = parts[0].uppercase()
+                    // Improved parsing: Split only once at the first space to get command and the rest as arguments
+                    val firstSpace = line.indexOf(' ')
+                    val command: String
+                    val arguments: String
+                    if (firstSpace != -1) {
+                        command = line.substring(0, firstSpace).uppercase()
+                        arguments = line.substring(firstSpace + 1).trim()
+                    } else {
+                        command = line.uppercase()
+                        arguments = ""
+                    }
+
                     var status = "SUCCESS"
                     var message = ""
 
@@ -62,16 +72,25 @@ class MyAccessibilityService : AccessibilityService() {
                             "OPEN_KIWI" -> openKiwi()
                             "NEW_TAB" -> openNewTab()
                             "NEW_INCOGNITO" -> openNewIncognito()
-                            "GOTO" -> if (parts.size > 1) openUrl(parts[1]) else throw Exception("URL missing")
-                            "CLICK" -> if (parts.size > 1) clickNode(parts[1]) else throw Exception("Target missing")
-                            "TYPE" -> if (parts.size > 2) typeText(parts[1], parts[2]) else throw Exception("Target or text missing")
-                            "CHECK" -> if (parts.size > 1) checkNode(parts[1], true) else throw Exception("Target missing")
-                            "UNCHECK" -> if (parts.size > 1) checkNode(parts[1], false) else throw Exception("Target missing")
+                            "GOTO" -> if (arguments.isNotEmpty()) openUrl(arguments) else throw Exception("URL missing")
+                            "CLICK" -> if (arguments.isNotEmpty()) clickNode(arguments) else throw Exception("Target missing")
+                            "TYPE" -> {
+                                // For TYPE, we need to split arguments into target and text
+                                // We expect: TYPE "Target Name" TextToType OR TYPE TargetName TextToType
+                                val typeParts = parseTypeArgs(arguments)
+                                if (typeParts.size >= 2) {
+                                    typeText(typeParts[0], typeParts[1])
+                                } else {
+                                    throw Exception("Target or text missing for TYPE")
+                                }
+                            }
+                            "CHECK" -> if (arguments.isNotEmpty()) checkNode(arguments, true) else throw Exception("Target missing")
+                            "UNCHECK" -> if (arguments.isNotEmpty()) checkNode(arguments, false) else throw Exception("Target missing")
                             "SCROLL" -> scrollDown()
-                            "CLICK_AREA" -> if (parts.size > 1) clickArea(parts[1]) else throw Exception("Coordinates missing")
+                            "CLICK_AREA" -> if (arguments.isNotEmpty()) clickArea(arguments) else throw Exception("Coordinates missing")
                             "WAIT" -> {
-                                if (parts.size > 1) {
-                                    val waitTime = parts[1].toLong()
+                                if (arguments.isNotEmpty()) {
+                                    val waitTime = arguments.toLong()
                                     Thread.sleep(waitTime)
                                     message = "Waited ${waitTime}ms"
                                 }
@@ -95,6 +114,25 @@ class MyAccessibilityService : AccessibilityService() {
             showToast("Script Error: ${e.message}")
             resultFile.appendText("\nFatal Error: ${e.message}\n")
         }
+    }
+
+    private fun parseTypeArgs(args: String): List<String> {
+        // Simple parser for TYPE arguments: supports quoted strings for multi-word targets
+        val result = mutableListOf<String>()
+        if (args.startsWith("\"")) {
+            val endQuote = args.indexOf("\"", 1)
+            if (endQuote != -1) {
+                result.add(args.substring(1, endQuote))
+                result.add(args.substring(endQuote + 1).trim())
+            } else {
+                val parts = args.split(" ", limit = 2)
+                result.addAll(parts)
+            }
+        } else {
+            val parts = args.split(" ", limit = 2)
+            result.addAll(parts)
+        }
+        return result
     }
 
     private fun openKiwi() {
@@ -126,7 +164,8 @@ class MyAccessibilityService : AccessibilityService() {
 
     private fun clickNode(target: String) {
         val root = rootInActiveWindow ?: throw Exception("Window root is null")
-        val node = findNode(root, target)
+        val cleanTarget = target.removeSurrounding("\"")
+        val node = findNode(root, cleanTarget)
         if (node != null) {
             if (node.isClickable) {
                 node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
@@ -135,48 +174,62 @@ class MyAccessibilityService : AccessibilityService() {
                 node.getBoundsInScreen(rect)
                 dispatchClick(rect.centerX().toFloat(), rect.centerY().toFloat())
             }
-            showToast("Clicked: $target")
+            showToast("Clicked: $cleanTarget")
         } else {
-            throw Exception("Node not found: $target")
+            throw Exception("Node not found: $cleanTarget")
         }
         root.recycle()
     }
 
     private fun typeText(target: String, text: String) {
         val root = rootInActiveWindow ?: throw Exception("Window root is null")
-        val node = findNode(root, target)
+        val cleanTarget = target.removeSurrounding("\"")
+        val node = findNode(root, cleanTarget)
         if (node != null) {
             val arguments = Bundle()
             arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
             node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-            showToast("Typed into $target")
+            showToast("Typed into $cleanTarget")
         } else {
-            throw Exception("Input field not found: $target")
+            throw Exception("Input field not found: $cleanTarget")
         }
         root.recycle()
     }
 
     private fun checkNode(target: String, check: Boolean) {
         val root = rootInActiveWindow ?: throw Exception("Window root is null")
-        val node = findNode(root, target)
+        val cleanTarget = target.removeSurrounding("\"")
+        val node = findNode(root, cleanTarget)
         if (node != null) {
             if (node.isChecked != check) {
                 node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             }
-            showToast("Checked/Unchecked: $target")
+            showToast("Checked/Unchecked: $cleanTarget")
         } else {
-            throw Exception("Checkbox not found: $target")
+            throw Exception("Checkbox not found: $cleanTarget")
         }
         root.recycle()
     }
 
     private fun findNode(root: AccessibilityNodeInfo, target: String): AccessibilityNodeInfo? {
+        // 1. Try exact ID
         val nodesById = root.findAccessibilityNodeInfosByViewId(target)
         if (nodesById != null && nodesById.isNotEmpty()) return nodesById[0]
 
+        // 2. Try exact text
         val nodesByText = root.findAccessibilityNodeInfosByText(target)
-        if (nodesByText != null && nodesByText.isNotEmpty()) return nodesByText[0]
+        if (nodesByText != null && nodesByText.isNotEmpty()) {
+            // Prefer exact matches if multiple found
+            for (node in nodesByText) {
+                if (node.text?.toString()?.equals(target, ignoreCase = true) == true ||
+                    node.contentDescription?.toString()?.equals(target, ignoreCase = true) == true) {
+                    return node
+                }
+            }
+            return nodesByText[0]
+        }
 
+        // 3. Fallback to recursive partial match
         return recursiveFindNode(root, target)
     }
 
