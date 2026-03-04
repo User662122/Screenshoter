@@ -1,0 +1,48 @@
+# Sample Automation Script for Screenshoter
+# Place this file in /sdcard/Controller/script.txt
+
+# Open Kiwi Browser
+OPEN_KIWI
+WAIT 2000
+
+# Open a website directly
+GOTO https://www.google.com
+WAIT 3000
+
+# Open a new tab
+NEW_TAB
+WAIT 2000
+
+# Open a new incognito tab
+NEW_INCOGNITO
+WAIT 2000
+
+# Go to a login page
+GOTO https://example.com/login
+WAIT 3000
+
+# Fill in user ID and password
+# You can use text or resource ID if you know it
+TYPE "Username" my_user_id
+WAIT 1000
+TYPE "Password" my_password
+WAIT 1000
+
+# Check a "Remember Me" checkbox
+CHECK "Remember Me"
+WAIT 1000
+
+# Click a login button
+CLICK "Login"
+WAIT 3000
+
+# Scroll down
+SCROLL
+WAIT 1000
+
+# Click a specific area (x1,y1,x2,y2) or (x,y)
+CLICK_AREA 500,1000,600,1100
+WAIT 1000
+
+# Click a specific coordinate
+CLICK_AREA 500,800
