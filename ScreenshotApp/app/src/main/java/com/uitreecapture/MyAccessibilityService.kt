@@ -86,7 +86,13 @@ class MyAccessibilityService : AccessibilityService() {
                             }
                             "CHECK" -> if (arguments.isNotEmpty()) checkNode(arguments, true) else throw Exception("Target missing")
                             "UNCHECK" -> if (arguments.isNotEmpty()) checkNode(arguments, false) else throw Exception("Target missing")
-                            "SCROLL" -> scrollDown()
+                            "SCROLL" -> {
+                                if (arguments.isNotEmpty()) {
+                                    scroll(arguments.toInt())
+                                } else {
+                                    scrollDownDefault()
+                                }
+                            }
                             "CLICK_AREA" -> if (arguments.isNotEmpty()) clickArea(arguments) else throw Exception("Coordinates missing")
                             "WAIT" -> {
                                 if (arguments.isNotEmpty()) {
@@ -184,12 +190,29 @@ class MyAccessibilityService : AccessibilityService() {
     private fun typeText(target: String, text: String) {
         val root = rootInActiveWindow ?: throw Exception("Window root is null")
         val cleanTarget = target.removeSurrounding("\"")
-        val node = findNode(root, cleanTarget)
+        val node: AccessibilityNodeInfo?
+
+        if (cleanTarget.startsWith("input") && cleanTarget.length > 5) {
+            val indexStr = cleanTarget.substring(5)
+            val index = indexStr.toIntOrNull()
+            if (index != null && index > 0) {
+                node = findInputNodeByIndex(root, index - 1) // Convert to 0-based index
+            } else {
+                throw Exception("Invalid input index: $cleanTarget")
+            }
+        } else {
+            node = findNode(root, cleanTarget)
+        }
+
         if (node != null) {
-            val arguments = Bundle()
-            arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-            showToast("Typed into $cleanTarget")
+            if (node.isEditable) {
+                val arguments = Bundle()
+                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                showToast("Typed into $cleanTarget")
+            } else {
+                throw Exception("Node is not editable: $cleanTarget")
+            }
         } else {
             throw Exception("Input field not found: $cleanTarget")
         }
@@ -233,6 +256,23 @@ class MyAccessibilityService : AccessibilityService() {
         return recursiveFindNode(root, target)
     }
 
+    private fun findInputNodeByIndex(root: AccessibilityNodeInfo, index: Int): AccessibilityNodeInfo? {
+        val inputNodes = mutableListOf<AccessibilityNodeInfo>()
+        collectInputNodes(root, inputNodes)
+        return inputNodes.getOrNull(index)
+    }
+
+    private fun collectInputNodes(node: AccessibilityNodeInfo, list: MutableList<AccessibilityNodeInfo>) {
+        if (node.isEditable) {
+            list.add(node)
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectInputNodes(child, list)
+            child.recycle()
+        }
+    }
+
     private fun recursiveFindNode(node: AccessibilityNodeInfo, target: String): AccessibilityNodeInfo? {
         if (node.text?.toString()?.contains(target, true) == true) return node
         if (node.contentDescription?.toString()?.contains(target, true) == true) return node
@@ -272,20 +312,30 @@ class MyAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun scrollDown() {
+    private fun scrollDownDefault() {
+        val display = resources.displayMetrics
+        val height = display.heightPixels
+        scroll((height * 0.5f).toInt()) // Default scroll down by half screen height
+    }
+
+    private fun scroll(distance: Int) {
         val display = resources.displayMetrics
         val width = display.widthPixels
         val height = display.heightPixels
 
+        val startY = if (distance > 0) height * 0.8f else height * 0.2f // Start near bottom for scroll down, near top for scroll up
+        val endY = startY - distance // Calculate endY based on distance
+
         val path = Path()
-        path.moveTo(width / 2f, height * 0.8f)
-        path.lineTo(width / 2f, height * 0.3f)
+        path.moveTo(width / 2f, startY)
+        path.lineTo(width / 2f, endY)
 
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 500))
             .build()
 
         dispatchGesture(gesture, null, null)
+        showToast("Scrolled by ${distance}px")
     }
 
     private fun showToast(msg: String) {
